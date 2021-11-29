@@ -1,0 +1,1176 @@
+// Biblilioteca do Sensor Infravermelho
+#include <IRremote.h>
+
+// Biblilioteca do LCD (16x2)
+#include <LiquidCrystal.h>
+
+// Inicialização dos pinos do LCD (RS,E,DB4,DB5,DB6,DB7)
+LiquidCrystal lcd(2,3,4,5,6,7);
+
+//Defines dos periféricos
+
+#define ELEVADOR 9
+
+#define EMERGENCIA 8
+
+#define INFRA_RED 10
+
+#define RELE 11
+
+#define PROX 12
+
+#define LED_LCD 13
+
+IRrecv irrecv(INFRA_RED);
+decode_results results;
+
+int status = 0;
+int segundos_std = 5; 
+int modo_std = 2;
+int comando = -1;
+int ciclo_std = 1;
+
+int agenda_std = 2;
+int agendaHoras_std=0;
+
+void setup() {
+    // Setup Pinos Digitais: OUTPUT
+    
+    pinMode(RELE,OUTPUT); // Rele para acionar lâmpadas
+    
+    pinMode(LED_LCD,OUTPUT); // LED do LCD
+    digitalWrite(LED_LCD,LOW);
+    
+    // Setup Pinos Digitais: INPUT
+    
+    pinMode(PROX,INPUT); // Sensor de proximidade
+    pinMode(EMERGENCIA,INPUT);
+    
+    Serial.begin(9600);
+    lcd.begin(16, 2);
+    
+    irrecv.enableIRIn();
+}
+
+void loop() {
+    Sistema();
+}
+
+void Sistema(){
+
+    if(status == 0) controle();
+    else comando = 0;
+
+    if(comando == 0){
+        if(status == 0) sistemaStatus();
+
+        if(modo_std==1) modoManual();
+
+        if(modo_std==2) modoAutomatico(0);
+
+        if(modo_std==3) modoAgenda();
+    }
+  
+}
+
+void modoManual(){
+
+    lcd.clear();
+    lcd.setCursor(2,0);
+    lcd.print("-Modo Manual-");
+    lcd.setCursor(1,1); 
+    lcd.print("You in Command!");
+    delay(1000);
+  
+    aguardandoComandos();
+    controle();
+
+    switch(comando){
+        
+        case 0:
+        sistemaStatus();
+        comando = -1;
+        break;
+        
+        case 2:
+        Processamento(segundos_std);
+        comando = -1;
+        break;
+        
+        case 4:
+        menu();
+        comando = -1;
+        break;      
+    }  
+}
+
+void modoAgenda(){
+  
+    lcd.clear();
+    lcd.setCursor(2,0);
+    lcd.print("-Modo Agenda-");
+    lcd.setCursor(0,1); 
+    lcd.print("Mission accepted");
+    delay(1500);
+
+    for(int i =0; i<ciclo_std;i++){
+
+        if(limpezaAgendada()){
+            Processamento(segundos_std);
+            comando = -1;     
+        }else switch(comando){
+            case 0:
+            sistemaStatus();
+            i = ciclo_std;
+            comando = -1;
+            break;
+                
+            case 2:
+            comando = -1;
+            lcd.clear();
+            lcd.setCursor(2,0);
+            lcd.print("-Modo Agenda-");
+            lcd.setCursor(4,1); 
+            lcd.print("PAUSADO");
+            while(comando != 2)controle(); 
+            comando = -1;
+            break;
+                
+            case 9:
+            i = ciclo_std;
+            comando = -1;
+            break;
+        }
+    }
+
+    if(status == 1){
+ 
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Limpezas");
+        lcd.setCursor(0,1); 
+        lcd.print("FINALIZADAS !");
+        
+        controle();
+        
+        switch(comando){
+            case 0:
+            sistemaStatus();
+            comando = -1;
+            break;
+            
+            case 4:
+            lcd.clear();
+            lcd.setCursor(2,0);
+            lcd.print("Deseja ");
+            lcd.setCursor(0,1); 
+            lcd.print("Continuar?");	
+            controle();
+            
+            switch(comando){
+                case 0 :
+                sistemaStatus();
+                comando = -1;
+                break;
+                
+                case 4:
+                modoAgenda();
+                comando = -1;
+                break;
+                
+                case 9:
+                modo_std = 1;
+                break;	
+            }
+            break;
+            case 9:
+            modo_std = 1;
+            break;
+        }   
+    }
+}
+
+void modoAutomatico(int repeticoes){
+	
+	int time  = segundos_std;
+ 	int cicles = ciclo_std;
+ 	int dones = 0;
+	
+    if(repeticoes == 0){
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Modo Automatico");
+        lcd.setCursor(0,1); 
+        lcd.print("Let me handle it");
+        delay(1000);
+ 	}
+ 	
+ 	lcd.clear();
+ 	lcd.setCursor(0,0); 
+ 	lcd.print("Ciclos ate a");
+ 	lcd.setCursor(0,1);
+ 	lcd.print("Limpeza: ");
+	
+ 	while(dones != cicles){
+        if(digitalRead(ELEVADOR)) dones++;
+        while(digitalRead(ELEVADOR)){  }
+        
+        lcd.setCursor(9,1);
+        lcd.print(cicles - dones);
+        delay(700);	
+	}
+		
+	lcd.clear();
+ 	lcd.setCursor(0,0); 
+ 	lcd.print("Operacao em");
+ 	lcd.setCursor(0,1);
+ 	lcd.print("Andamento...");
+    
+	delay(100);
+	
+    lcd.clear();
+    while(time != 0 ){
+    	
+ 		controleQuick();
+ 		
+ 	    if(!ProcessamentoAutomatico(time));
+      
+        else{
+            comando = -1;
+            digitalWrite(RELE,LOW);
+            lcd.clear();
+            lcd.setCursor(0,0); 
+            lcd.print("Aguardando");
+            lcd.setCursor(0,1);
+            lcd.print("Normalizacao...");
+            delay(2000);
+            while(monitoramento() && comando == -1){
+                controleQuick();
+                if(digitalRead(EMERGENCIA)) comando == 0;
+            }
+        }
+ 		
+ 		switch(comando){
+            case 0:
+            if(status == 1) sistemaStatus();
+            comando = -1;
+            time = -1;
+            break;
+            
+            case 2:
+            digitalWrite(RELE,LOW);
+            lcd.clear();
+            lcd.setCursor(0,0); 
+            lcd.print("Repeticoes ate");
+            lcd.setCursor(0,1);
+            lcd.print("entao: ");
+            lcd.print(repeticoes);
+            controle();
+            break;
+                
+            case 4:
+            digitalWrite(RELE,LOW);
+            menu();
+            if(modo_std != 3) time = -1;
+            break;
+            
+            case 9:
+            time = -1;
+            break;
+		}
+	}
+	modoAutomatico(repeticoes);	
+}
+
+bool ProcessamentoAutomatico(int &tempo){
+  
+    int mode = modo_std;
+    
+    digitalWrite(RELE,HIGH);
+    
+    lcd.clear();
+    lcd.setCursor(0,1);
+    lcd.print("Processando...");
+    
+    cronometro(tempo);
+    delay(1000);
+    tempo--;
+ 
+    //if(monitoramento()) return true;
+    
+    controleQuick();
+    
+    if(monitoramento()) return true; //movimento detectado
+    
+    switch(comando){
+        case 0:
+        sistemaStatus();
+        break;
+        
+        case 2:
+        limpezaPausada();
+        if(comando == 0) tempo = 0;
+        break;
+        
+        case 4:
+        menu();
+        if(mode != modo_std) {
+            status = 0;
+            tempo = -1;
+        }
+        break;
+        
+        case 9:
+        tempo =0;
+        break;
+    }
+
+    return false;  
+}
+ 
+ 
+void Processamento(int tempo){
+    
+    int mode = modo_std;
+    
+    digitalWrite(RELE,HIGH);
+    
+    lcd.clear();
+    lcd.setCursor(0,1);
+    lcd.print("Processando...");
+    
+    while(tempo>0 && status == 1){
+        cronometro(tempo);
+        delay(1000);
+        tempo--;
+        
+        controleQuick();
+        
+        switch(comando){
+            case 0:
+            sistemaStatus();
+            break;
+            
+            case 2:
+            limpezaPausada();
+            if(comando == 0) tempo = 0;
+            break;
+            
+            case 4:
+            menu();
+            if(mode != modo_std) {
+                status = 0;
+                tempo = -1;
+            }
+            break;
+            
+            case 9:
+            tempo =0;
+            break;
+        }
+    
+    }
+    
+    if(status == 1 &&  tempo  == 0){
+        //Quando zerar o tempo
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("Limpeza");
+        lcd.setCursor(0,1);
+        lcd.print("Finalizada");
+        digitalWrite(RELE, LOW);
+        delay(500);
+    }
+  
+}
+
+void controle(){
+    comando = -1;
+    while(comando == -1) controleQuick(); 
+}
+
+void controleQuick(){
+  
+    comando = -1;
+    
+    if(irrecv.decode(&results)){
+        Serial.println(results.value, HEX); // Print dos valores no serial
+        
+        irrecv.resume(); //Leitura dos prox. valores
+        
+        if(results.value == 0xFD00FF) // 0xFD00FF = ON 
+        {
+            comando =0;
+            results.value = 0x0;
+        }
+    
+        if(results.value == 0xFD807F ) 
+        {
+            comando = 1;
+            results.value = 0x0;
+        }
+    
+        if(results.value == 0xFD40BF ) 
+        {
+            comando = 2;
+            results.value = 0x0;
+        }
+        
+        if(results.value == 0xFD20DF ) 
+        {
+            comando = 3;
+            results.value = 0x0;
+        }
+        
+        if(results.value == 0xFDA05F ) 
+        {
+            comando = 4;
+            results.value = 0x0;
+        }
+        
+        if(results.value == 0xFD609F ) 
+        {
+            comando = 5;
+            results.value = 0x0;
+        }
+        
+        if(results.value == 0xFD10EF ) 
+        {
+            comando = 6;
+            results.value = 0x0;
+        }
+        
+        if(results.value == 0xFD906F ) 
+        {
+            comando = 7;
+            results.value = 0x0;
+        }
+        
+        if(results.value == 0xFD708F ) 
+        {
+            comando = 9;
+            results.value = 0x0;
+        }
+    }
+}
+  
+  
+void aguardandoComandos(){
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Aguardando");
+    lcd.setCursor(0,1);
+    lcd.print("Comandos ...");
+}
+
+void limpezaPausada(){
+  
+    int valid=0;
+    
+    digitalWrite(RELE,LOW);
+    
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Limpeza Pausada");
+    
+    while(valid == 0){
+        
+    controle();
+        switch(comando){
+            
+            case 0:
+            sistemaStatus();
+            valid =1;
+            break;
+            
+            case 2:
+            valid =1;
+            break;   
+        }
+    }
+}
+
+void sistemaStatus(){
+  
+    switch( status ){
+        case 0:
+        lcd.clear();
+        digitalWrite(LED_LCD,HIGH);
+        lcd.setCursor(3,0);
+        lcd.print("System ON");
+        delay(700);
+        lcd.clear();
+        comando =-1;
+        status = 1;
+        break;
+            
+        case 1:
+        lcd.noBlink();
+        lcd.clear();
+        lcd.setCursor(3,0);
+        lcd.print("System OFF");
+        delay(700);
+        lcd.clear();
+        digitalWrite(LED_LCD,LOW);
+        digitalWrite(RELE,LOW);
+        status = 0;
+        break;
+    }
+}
+  
+void menu(){
+
+    int valid = 0;
+    int option = 1;
+    
+    while(option != 0){
+    
+        lcd.noBlink();
+        lcd.clear();
+        lcd.setCursor(2,0);
+        lcd.print("- M E N U -");
+    
+            switch(option){
+            
+            case 1:
+            lcd.setCursor(0,1);
+            lcd.print("Config. Tempo");
+            menuOperations(option);
+            break;
+            
+            case 2:
+            lcd.setCursor(0,1);
+            lcd.print("Config. Modo ");
+            menuOperations(option);
+            break;
+            
+            case 3:
+            lcd.setCursor(0,1);
+            lcd.print("Config. Ciclos ");
+            menuOperations(option);
+            break;
+            
+            case 4:
+            lcd.setCursor(0,1);
+            lcd.print("Config. Agenda ");
+            menuOperations(option);
+            break;
+        }
+    }
+}
+
+void menuOperations(int &option){
+        
+        int valid =0;
+        
+        while(valid == 0){
+        delay(100);
+        
+        controle();
+        
+        delay(100);
+        
+            switch(comando){
+                
+                case 0:
+                valid = 1;
+                option = 0;
+                sistemaStatus();
+                break;
+                
+                case 4:
+                valid = 1;
+                if(option == 1)configurarTempo();
+                if(option == 2)configurarModo();
+                if(option == 3)configurarCiclo();
+                if(option == 4)configurarAgenda();
+                if(status == 0)option = 0;
+                break;
+                
+                case 3:
+                valid = 1;
+                option--;
+                if(option <= 0) option = 4;
+                break;
+                
+                case 5:
+                valid = 1;
+                option++;
+                if(option >= 5) option =1;
+                break;
+                
+                case 9:
+                valid = 1;
+                option = 0;
+                break;
+            }  
+        }
+    }
+
+void configurarTempo(){
+    
+    int valid =0;
+    void configTime(int &tempo, int&n);
+    int segundosSave = segundos_std;
+    
+    cronometro(segundos_std);
+    
+    int segundos = segundos_std;
+    int decimalMinutos=0;
+    int minutos=0;
+    int decimalSegundos=0;
+    segundos_std = 0;
+    
+    while(segundos >= 60){
+        segundos -=60;
+        minutos ++;
+    }
+    
+    while(minutos>=10){
+        minutos -= 10;
+        decimalMinutos++;
+    }
+    
+    while(segundos>=10){
+        segundos -=10;
+        decimalSegundos++;
+    }
+    
+    int n=8;
+    lcd.setCursor(n,0);
+    lcd.blink();
+    
+    while(valid != 1){
+        
+        controle();
+    
+        switch(comando){
+                
+            case 0 :
+            sistemaStatus();
+            valid=1;
+            break;
+            
+            case 3:
+            esquerda(comando,n);
+            break;
+            
+            case 4:   
+            if(n == 8)configTime(decimalMinutos,n);
+            if(n == 9)configTime(minutos,n);
+            if(n == 11)configTime(decimalSegundos,n);
+            if(n == 12)configTime(segundos,n);
+            if(comando == 0) valid = 1;
+            
+            n=8;
+            lcd.setCursor(n,0);
+            
+            break;
+            
+            case 5:
+            direita(comando,n);
+            break;
+            
+            case 9:
+            segundos_std = 600*decimalMinutos + 60*minutos + 10*decimalSegundos
+            + segundos;
+            valid =1;
+            break;
+        }
+    }
+}
+
+
+void direita(int &comando, int &n){
+  
+    if(n==9) n++;
+    
+    if(n>11) n=8;
+    else n++;
+    
+    lcd.setCursor(n,0);
+    comando =0;
+  
+}
+
+void esquerda(int &comando, int &n){
+  
+        if(n==11) n--;
+        
+        if(n<9) n=12;
+        else n--;
+        
+        lcd.setCursor(n,0);
+        comando =0;
+  
+}
+
+void configTime(int &tempo, int&n){
+    
+    int valid=0;
+    
+    lcd.setCursor(0,1);
+    lcd.print("Configurando...");
+    lcd.setCursor(n,0);
+
+    while(valid != 1){
+    
+        controle();
+
+        switch(comando){
+                
+            case 0:
+            sistemaStatus();
+            valid =1;
+            break;
+
+            case 1:
+            tempo++;
+            if(tempo >9) tempo =0;
+            lcd.print(tempo);
+            lcd.setCursor(n,0);
+            break;
+
+            case 7:
+            tempo--;
+            if(tempo <0) tempo =9;
+            lcd.print(tempo);
+            lcd.setCursor(n,0);
+            break;
+
+            case 4:
+            lcd.setCursor(0,n);
+            lcd.print("                ");
+            valid = 1;
+            break;
+            
+            case 9:
+            valid=1;
+            break;
+        }
+    }  
+}
+   
+
+void cronometro(int segundos){
+    
+    int decimalMinutos=0;
+    int minutos=0;
+    int decimalSegundos=0;
+    
+    while(segundos >= 60){
+        segundos -=60;
+        minutos ++;
+    }
+    
+    while(minutos>=10){
+        minutos -= 10;
+        decimalMinutos++;
+    }
+    
+    while(segundos>=10){
+        segundos -=10;
+        decimalSegundos++;
+    }
+    
+    lcd.setCursor(0,0);
+    lcd.print("Tempo: ");
+    
+    lcd.setCursor(8,0);
+    lcd.print(decimalMinutos);
+    lcd.print(minutos);
+    lcd.print(":");
+    
+    lcd.print(decimalSegundos);   
+    lcd.print(segundos);
+}
+  
+void configurarModo(){
+  
+    int valid =0;
+    int modo = modo_std;
+    
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Modo Tipo: ");
+    lcd.setCursor(0,1);
+    
+    if(modo == 1) lcd.print("Manual   ");
+    if(modo == 2)lcd.print("Automatico");
+    if(modo == 3)lcd.print("Agenda    ");
+  
+    while(valid==0){
+    controle();
+      
+      switch(comando){
+        case 0:
+        valid=1;
+        sistemaStatus();
+        break;
+            
+        case 3:
+        valid = 1;
+        modo--;
+        if(modo == 0) modo = 3;
+        modo_std = modo;
+        configurarModo();
+        break;
+            
+        case 4:
+        valid =1;
+        break;
+            
+        case 5:
+        valid = 1;
+        modo ++;
+        if(modo>3) modo = 1;
+        modo_std = modo;
+        configurarModo();
+        break;
+            
+        case 9:
+        valid=1;
+        break;
+        }
+    }
+}
+  
+void configurarCiclo(){
+	
+	int valid =0,temp=0, decimal=0,unidade =0;
+	int n =14;
+	
+	temp = ciclo_std;
+	
+	while(temp>10){
+		
+        temp -=10;
+        decimal++;
+		
+	}
+	
+	unidade = temp;	
+	
+	lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Ciclos por limpeza:");
+    lcd.setCursor(0,1);
+	lcd.print("N. de ciclos: ");
+    lcd.print(decimal);
+    lcd.print(unidade);
+	lcd.setCursor(n,1);
+	lcd.blink();
+	
+	while(valid ==0){
+        
+        controle();
+        
+        switch(comando){
+                
+            case 0:
+            valid=1;
+            sistemaStatus();
+            break;
+            
+            case 3:
+            n--;
+            if(n<14) n=15;
+            lcd.setCursor(n,1);
+            break;
+            
+            case 5:
+            n++;
+            if(n>15) n=14;
+            lcd.setCursor(n,1);
+            break;	
+            
+            case 1:
+            if(n==14){
+                decimal ++;
+                if(decimal > 10)decimal = 0;
+                lcd.print(decimal);
+                lcd.setCursor(n,1);
+            }
+            if(n==15){
+            unidade ++;
+                if(unidade > 10)unidade =0;
+                lcd.print(unidade);
+                lcd.setCursor(n,1);  
+            } 
+            break;
+            
+            case 7:
+            if(n==14){
+                decimal --;
+                if(decimal < 0) decimal =9;
+                lcd.print(decimal);
+                lcd.setCursor(n,1);
+            }
+            if(n==15){
+                unidade --;
+                if(unidade < 1)unidade = 9;
+                lcd.print(unidade);
+                lcd.setCursor(n,1);
+            } 
+            break;
+            
+            case 4:
+            valid = 1;
+            break;
+            
+            case 9:
+            valid = 1;
+            break;
+        }
+	}
+}
+
+void configurarAgenda(){
+	
+	int valid =0, ni= 7, nf=14, n=ni;
+	int  decimalHoras=0,horas=0,decimalMinutos=0, minutos=0, decimalSegundos=0;
+    int segundos =0, temp=0, tempHoras=0;
+	
+	temp = agenda_std;
+	tempHoras = agendaHoras_std;
+	
+	while(temp >= 60){
+		segundos -=60;
+		minutos++;
+	}
+	
+	while(temp>=10){
+		segundos-=10;
+		decimalSegundos++;
+	}
+	
+	while(minutos>=10){
+		minutos-=10;
+		decimalMinutos++;
+	}
+	
+	while(tempHoras>=10)
+	{
+		tempHoras -=10;
+		decimalHoras++;
+	}
+	
+	horas = tempHoras;
+	segundos = temp;
+	
+	lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Tempo/Limpeza");
+    lcd.setCursor(0,1);
+    lcd.print("Tempo: ");
+	lcd.blink();
+	
+	while(valid ==0){
+	    delay(100);
+        
+        if(decimalHoras >2 ||(decimalHoras == 2 && horas >4)){
+            decimalHoras = 2;
+            horas = 4;
+            decimalMinutos=0;
+            decimalSegundos=0;
+            minutos=0;
+            segundos=0;   
+        }
+        
+        lcd.setCursor(ni,1);
+        lcd.print(decimalHoras);
+        lcd.print(horas);
+        lcd.print(":");
+        lcd.print(decimalMinutos);
+        lcd.print(minutos);
+        lcd.print(":");
+        lcd.print(decimalSegundos);
+        lcd.print(segundos);
+        lcd.setCursor(n,1);
+        
+        controle();
+        
+        delay(100);
+        
+        switch(comando){
+                
+            case 0:
+            valid=1;
+            sistemaStatus();
+            break;
+            
+            case 3:
+            n--;
+            if(n<ni)n=nf;
+            if(n == 9) n=8;
+            if(n == 12) n =11;
+            lcd.setCursor(n,1);
+            break;
+            
+            case 5:
+            n++;
+            if(n>nf)n=ni;
+            if(n == 9) n=10;
+            if(n== 12) n=13;
+            lcd.setCursor(n,1);
+            break;	
+            
+            case 1:
+                
+            if(n== ni)configAgenda(decimalHoras,n);
+            
+            if(n== ni+1)configAgenda(horas,n);
+            
+            if(n== 10)configAgenda(decimalMinutos,n);
+            
+            if(n== 11)configAgenda(minutos,n);
+            
+            if(n== nf-1)configAgenda(decimalSegundos,n);
+            
+            if(n== nf)configAgenda(segundos,n);
+            
+            break;
+            
+            case 7:
+            if(n== ni)configAgenda(decimalHoras,n);
+            
+            if(n== ni+1)configAgenda(horas,n);
+            
+            if(n== 10)configAgenda(decimalMinutos,n);
+            
+            if(n== 11)configAgenda(minutos,n);
+            
+            if(n== nf-1)configAgenda(decimalSegundos,n);
+            
+            if(n== nf)configAgenda(segundos,n);
+            break;
+            
+            case 4:
+            agendaHoras_std = 10*decimalHoras + horas;
+            agenda_std = 600*decimalMinutos + 60*minutos + segundos;
+            valid=1;
+            break;
+            
+            case 9:
+            valid = 1;
+            break;
+        }	
+	}	
+}
+
+void configAgenda(int &tempo, int n){
+	
+	switch(comando){
+            
+        case 1:
+        tempo++;
+        if(tempo >9)tempo =0;
+        lcd.print(tempo);
+        lcd.setCursor(n,1);
+        break;
+        
+        case 7:
+        tempo --;
+        if(tempo<0)tempo=9;
+        lcd.print(tempo);
+        lcd.setCursor(n,1);
+	}
+}
+
+bool limpezaAgendada(){
+
+    int horasTemp = agendaHoras_std, segundosTemp =agenda_std, valid =0;
+        
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("Limpeza daqui:");
+    
+    while(valid ==0  && segundosTemp >=0){
+        
+        agendaView(horasTemp,segundosTemp);
+        if(cronometroAgenda(horasTemp,segundosTemp)) return true;
+    
+        controleQuick();
+    
+        switch(comando){
+            
+            case 0:
+            valid = 1;
+            break;
+            
+            case 2:
+            valid=1;
+            break;
+                
+            case 4:
+            menu();
+            break;
+            
+            case 9:
+            valid = 1;
+            break;	 
+        } 
+    }
+  return false;
+}
+
+
+bool cronometroAgenda(int &horas, int &segundos) {
+  
+    if(segundos == 0 && horas == 0)
+        return true;
+
+    if(segundos == 0){
+        if(horas > 0){
+            horas--;
+            segundos = 3599;
+            return false;
+        }
+    }
+    segundos--;
+    delay(700);
+    return false;
+}
+
+void agendaView(int h, int s){
+    int dh=0,dm=0,m=0,ds=0;
+  
+	while(s >= 60){
+		s -=60;
+		m++;
+	}
+	
+	while(s >=10){
+		s-=10;
+		ds++;
+	}
+	
+	while(m>=10){
+		m-=10;
+		dm++;
+	}
+	
+	while(h>=10){
+		h -=10;
+		dh++;
+	}
+
+	lcd.setCursor(0,1);
+    lcd.print("Tempo: ");
+	lcd.print(dh);
+	lcd.print(h);
+	lcd.print(":");
+    lcd.print(dm);
+    lcd.print(m);
+    lcd.print(":");
+    lcd.print(ds);
+    lcd.print(s);
+}
+
+bool monitoramento(){
+  if(digitalRead(ELEVADOR)) return true;
+
+  if(digitalRead(PROX)) return true;
+
+  if(digitalRead(EMERGENCIA)) return true;
+}
